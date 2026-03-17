@@ -9,9 +9,7 @@
         "150": "static/logo/Tridactyl_150px.png"
     },
     "background": {
-        "scripts": [
-            "background.js"
-        ]
+        "scripts": ["background.js"]
     },
     "chrome_url_overrides": {
         "newtab": "static/newtab.html"
@@ -90,12 +88,8 @@
     },
     "content_scripts": [
         {
-            "matches": [
-                "<all_urls>"
-            ],
-            "js": [
-                "content.js"
-            ],
+            "matches": ["<all_urls>"],
+            "js": ["content.js"],
             "css": [
                 "static/css/cleanslate.css",
                 "static/css/content.css",
@@ -131,6 +125,7 @@
         "topSites",
         "management",
         "nativeMessaging",
+        "tabGroups",
         "webNavigation",
         "webRequest",
         "webRequestBlocking",

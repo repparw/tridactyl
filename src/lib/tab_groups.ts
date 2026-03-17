@@ -6,10 +6,91 @@ import {
 } from "./webext"
 
 /**
+ * Check if native Firefox tab groups API is available
+ */
+export function hasNativeTabGroups(): boolean {
+    return (
+        browserBg.tabs?.group !== undefined && browserBg.tabGroups !== undefined
+    )
+}
+
+/**
+ * Get or create a native tab group ID from a group name
+ */
+async function getOrCreateGroupId(
+    name: string,
+    windowId?: number,
+): Promise<number> {
+    if (!hasNativeTabGroups()) {
+        // Fall back to legacy implementation
+        return Promise.resolve(-1)
+    }
+
+    if (windowId === undefined) {
+        windowId = await activeWindowId()
+    }
+
+    // Query existing groups
+    const groups = await browserBg.tabGroups.query({ windowId })
+    const existingGroup = groups.find(g => g.title === name)
+
+    if (existingGroup) {
+        return existingGroup.id
+    }
+
+    // Create a new group by grouping a tab
+    const tab = await browserBg.tabs.create({
+        windowId,
+        active: false,
+    })
+    const groupId = await browserBg.tabs.group({
+        tabIds: [tab.id],
+        createProperties: { windowId },
+    })
+
+    // Set the group title (color will default to something reasonable)
+    await browserBg.tabGroups.update(groupId, { title: name })
+
+    // Close the temporary tab
+    await browserBg.tabs.remove(tab.id)
+
+    return groupId
+}
+
+/**
+ * Get group ID from name without creating if it doesn't exist
+ */
+async function getGroupIdFromName(
+    name: string,
+    windowId?: number,
+): Promise<number | undefined> {
+    if (!hasNativeTabGroups()) {
+        return undefined
+    }
+
+    if (windowId === undefined) {
+        windowId = await activeWindowId()
+    }
+
+    const groups = await browserBg.tabGroups.query({ windowId })
+    const group = groups.find(g => g.title === name)
+    return group?.id
+}
+
+/**
  * Return a set of the current window's tab groups (empty if there are none).
+ *
+ * For native tab groups, returns the titles of all groups.
  *
  */
 export async function tgroups() {
+    if (hasNativeTabGroups()) {
+        const windowId = await activeWindowId()
+        const groups = await browserBg.tabGroups.query({ windowId })
+        return new Set<string>(groups.map(g => g.title).filter(t => t))
+    }
+
+    // Fall back to legacy implementation
     const groups = await browserBg.sessions.getWindowValue(
         await activeWindowId(),
         "tridactyl-tgroups",
@@ -20,10 +101,16 @@ export async function tgroups() {
 /**
  * Set the current window's tab groups.
  *
- * @param groups The set of groups.
+ * Note: For native tab groups, this is no-op since groups are managed by Firefox.
+ * The function exists for API compatibility.
  *
  */
 export async function setTgroups(groups: Set<string>) {
+    if (hasNativeTabGroups()) {
+        // Native groups are managed by Firefox
+        return
+    }
+
     return browserBg.sessions.setWindowValue(
         await activeWindowId(),
         "tridactyl-tgroups",
@@ -40,12 +127,30 @@ export function clearTgroups() {
 }
 
 /**
- * Return the active tab group for the a window or undefined.
+ * Return the active tab group for the window or undefined.
  *
- * @param id The id of the window. Use the current window if not specified.
+ * For native tab groups, returns the title of the group containing the active tab.
  *
  */
 export async function windowTgroup(id?: number) {
+    if (hasNativeTabGroups()) {
+        const windowId = id ?? (await activeWindowId())
+        const activeTab = await browserBg.tabs.query({
+            windowId,
+            active: true,
+        })
+        if (!activeTab.length) return undefined
+
+        const tab = activeTab[0]
+        if (tab.groupId === -1) return undefined
+
+        const groups = await browserBg.tabGroups.query({
+            windowId,
+        })
+        const group = groups.find(g => g.id === tab.groupId)
+        return group?.title
+    }
+
     if (id === undefined) {
         id = await activeWindowId()
     }
@@ -58,11 +163,26 @@ export async function windowTgroup(id?: number) {
 /**
  * Set the active tab group for a window.
  *
- * @param name The name of the new active tab group.
- * @param id The id of the window. Use the current window if not specified.
+ * For native tab groups, this switches to the first tab in the specified group.
  *
  */
 export async function setWindowTgroup(name: string, id?: number) {
+    if (hasNativeTabGroups()) {
+        const windowId = id ?? (await activeWindowId())
+        const groupId = await getGroupIdFromName(name, windowId)
+        if (groupId !== undefined) {
+            // Activate the first tab in the group
+            const tabs = await browserBg.tabs.query({
+                windowId,
+                groupId,
+            })
+            if (tabs.length > 0) {
+                await browserBg.tabs.update(tabs[0].id, { active: true })
+            }
+        }
+        return
+    }
+
     if (id === undefined) {
         id = await activeWindowId()
     }
@@ -76,10 +196,38 @@ export async function setWindowTgroup(name: string, id?: number) {
 /*
  * Return the last active tab group for a window or undefined.
  *
- * @param id The id of the window. Use the current window if not specified.
- *
  */
 export async function windowLastTgroup(id?: number) {
+    if (hasNativeTabGroups()) {
+        // For native groups, use lastAccessed to determine last active
+        const windowId = id ?? (await activeWindowId())
+        const currentGroup = await windowTgroup(windowId)
+        const groups = await browserBg.tabGroups.query({ windowId })
+        const otherGroups = groups.filter(g => g.title !== currentGroup)
+
+        if (otherGroups.length === 0) return undefined
+
+        // Get the most recently accessed tab in each group
+        let lastGroup: string | undefined
+        let maxLastAccessed = 0
+
+        for (const group of otherGroups) {
+            const tabs = await browserBg.tabs.query({
+                windowId,
+                groupId: group.id,
+            })
+            const groupLastAccessed = Math.max(
+                ...tabs.map(t => t.lastAccessed || 0),
+            )
+            if (groupLastAccessed > maxLastAccessed) {
+                maxLastAccessed = groupLastAccessed
+                lastGroup = group.title
+            }
+        }
+
+        return lastGroup
+    }
+
     const otherGroupsTabs = await tgroupTabs(await windowTgroup(id), true)
     if (otherGroupsTabs.length === 0) {
         return undefined
@@ -100,10 +248,22 @@ export function clearWindowTgroup() {
 /**
  * Return a tab's tab group.
  *
- * @param id The id of the tab. Use the current tab if not specified.
+ * For native tab groups, returns the title of the group the tab belongs to.
  *
  */
 export async function tabTgroup(id?: number) {
+    if (hasNativeTabGroups()) {
+        const tabId = id ?? (await activeTabId())
+        const tab = await browserBg.tabs.get(tabId)
+        if (tab.groupId === -1) return undefined
+
+        const groups = await browserBg.tabGroups.query({
+            windowId: tab.windowId,
+        })
+        const group = groups.find(g => g.id === tab.groupId)
+        return group?.title
+    }
+
     if (id === undefined) {
         id = await activeTabId()
     }
@@ -115,10 +275,6 @@ export async function tabTgroup(id?: number) {
 
 /**
  * Return a list of tab ids.
- *
- * @param id An id, a list of ids, or undefined.
- *
- * If id is undefined, return a list of the current tab id.
  *
  */
 async function tabIdsOrCurrent(ids?: number | number[]): Promise<number[]> {
@@ -133,12 +289,21 @@ async function tabIdsOrCurrent(ids?: number | number[]): Promise<number[]> {
 /**
  * Set the a tab's tab group.
  *
- * @param name The name of the tab group.
- * @param id The id(s) of the tab(s). Use the current tab if not specified.
+ * For native tab groups, adds the tab to the specified group.
  *
  */
 export async function setTabTgroup(name: string, id?: number | number[]) {
     const ids = await tabIdsOrCurrent(id)
+
+    if (hasNativeTabGroups()) {
+        const windowId = await activeWindowId()
+        const groupId = await getOrCreateGroupId(name, windowId)
+        return browserBg.tabs.group({
+            tabIds: ids,
+            groupId,
+        })
+    }
+
     return Promise.all(
         ids.map(id => {
             browserBg.sessions.setTabValue(id, "tridactyl-tgroup", name)
@@ -147,13 +312,17 @@ export async function setTabTgroup(name: string, id?: number | number[]) {
 }
 
 /**
- * Clear all the tab groups.
- *
- * @param id The id(s) of the tab(s). Use the current tab if not specified.
+ * Clear all the tab groups for specific tabs.
  *
  */
 export async function clearTabTgroup(id?: number | number[]) {
     const ids = await tabIdsOrCurrent(id)
+
+    if (hasNativeTabGroups()) {
+        // Ungroup tabs
+        return browserBg.tabs.ungroup(ids)
+    }
+
     return Promise.all(
         ids.map(id => {
             browserBg.sessions.removeTabValue(id, "tridactyl-tgroup")
@@ -177,6 +346,25 @@ export async function tgroupTabs(
     if (id === undefined) {
         id = await activeWindowId()
     }
+
+    if (hasNativeTabGroups()) {
+        const groupId = await getGroupIdFromName(name, id)
+        if (groupId === undefined) {
+            return other ? await browserBg.tabs.query({ windowId: id }) : []
+        }
+
+        const allTabs = await browserBg.tabs.query({ windowId: id })
+        const groupTabs = await browserBg.tabs.query({
+            windowId: id,
+            groupId,
+        })
+        const groupTabIds = new Set(groupTabs.map(t => t.id))
+
+        return allTabs.filter(tab =>
+            other ? !groupTabIds.has(tab.id) : groupTabIds.has(tab.id),
+        )
+    }
+
     return browserBg.tabs.query({ windowId: id }).then(async tabs => {
         const sameGroupIndices = await Promise.all(
             tabs.map(async ({ id }) => {
@@ -192,9 +380,6 @@ export async function tgroupTabs(
 /**
  * Return the id of the last selected tab in a tab group.
  *
- * @param name The name of the tab group.
- * @param previous Whether to return the tab selected before the last tab.
- *
  */
 export async function tgroupLastTabId(name: string, previous = false) {
     const tabs = await tgroupTabs(name)
@@ -208,14 +393,6 @@ export async function tgroupLastTabId(name: string, previous = false) {
 
 /**
  * Clear stored information for a tab group.
- *
- * @param name The name of the tab group.
- * @param newName A name to rename the group to.
- * @param id The id of the window. Use the current window if not specified.
- *
- * If newName is specified, add it as a stored group (if it doesn't already
- * exist), set the current window group to it, and set the group for all tabs in
- * the old group to it.
  *
  */
 export async function tgroupClearOldInfo(
@@ -252,12 +429,9 @@ export async function tgroupClearOldInfo(
 /**
  * Activate the previously active tab in a tab group.
  *
- * @param name The name of the tab group to switch to.
- *
  */
 export async function tgroupActivate(name: string) {
     const lastActiveTabId = await tgroupLastTabId(name)
-    // this will trigger tgroupHandleTabActivated
     return browserBg.tabs.update(lastActiveTabId, { active: true })
 }
 
@@ -277,6 +451,17 @@ export async function tgroupActivateLast() {
  *
  */
 export async function clearAllTgroupInfo() {
+    if (hasNativeTabGroups()) {
+        // For native groups, ungroup all tabs in the window
+        const windowId = await activeWindowId()
+        const tabs = await browserBg.tabs.query({ windowId })
+        const tabIds = tabs
+            .map(t => t.id)
+            .filter((id): id is number => id !== undefined)
+        await browserBg.tabs.ungroup(tabIds)
+        return
+    }
+
     return Promise.all([
         clearTgroups(),
         clearWindowTgroup(),
@@ -293,8 +478,6 @@ export async function clearAllTgroupInfo() {
  *
  * Do nothing if the tab is already associated with a tab group.
  *
- * @param tab The tab that was just created.
- *
  */
 export async function tgroupHandleTabCreated(tab: browser.tabs.Tab) {
     const windowGroup = await windowTgroup(tab.windowId)
@@ -310,13 +493,8 @@ export async function tgroupHandleTabCreated(tab: browser.tabs.Tab) {
 /**
  * Set the tab's tab group to its window's active tab group if there is one.
  *
- * @param tabId The id of the tab that was just attached to this window.
- *
  */
 export async function tgroupHandleTabAttached(tabId: number, attachInfo) {
-    // NOTE this doesn't need to worry about a tab on another window previously
-    // being pinned because tabs become unpinned when you move them between
-    // windows
     const windowGroup = await windowTgroup(attachInfo.newWindowId)
     if (windowGroup) {
         return setTabTgroup(windowGroup, tabId)
@@ -326,10 +504,15 @@ export async function tgroupHandleTabAttached(tabId: number, attachInfo) {
 /**
  * Handle tab activation, possibly switching tab groups.
  *
- * If the new tab is from a different tab group, set it as the new tab group,
- * show all its tabs, and hide all tabs from the old tab group.
+ * If the new tab is from a different tab group, switch to it.
+ *
  */
 export async function tgroupHandleTabActivated(activeInfo) {
+    if (hasNativeTabGroups()) {
+        // Native tab groups handle group switching automatically
+        return
+    }
+
     const windowGroup = await windowTgroup(activeInfo.windowId)
     const tabGroup = await tabTgroup(activeInfo.tab)
     const promises = []
@@ -352,8 +535,6 @@ export async function tgroupHandleTabActivated(activeInfo) {
 
 /**
  * Set or clear a tab's group if it was pinned or unpinned respectively.
- *
- * @param tabId The id of the tab that was just updated.
  *
  */
 export async function tgroupHandleTabUpdated(
