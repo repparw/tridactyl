@@ -131,6 +131,7 @@
         "topSites",
         "management",
         "nativeMessaging",
+        "tabGroups",
         "webNavigation",
         "webRequest",
         "webRequestBlocking",
