@@ -38,7 +38,7 @@ function getSelectionDirection(selection: Selection): boolean {
 
 export function extendByCharacter(
     selection: Selection,
-    direction: string,
+    direction: "forward" | "backward" | "left" | "right",
 ): void {
     const oldFocusNode = selection.focusNode
     const oldFocusOffset = selection.focusOffset

@@ -15,6 +15,13 @@ interface Window {
     scrollByPages(n: number): void
     eval(str: string): any
 }
+interface Selection {
+    modify(
+        alter: "move" | "extend",
+        direction: "forward" | "backward" | "left" | "right",
+        granularity: "character" | "word" | "line",
+    ): void
+}
 
 // Record that we've added a property with convenience objects to the
 // window object:
@@ -47,7 +54,7 @@ interface findResult {
 
 interface HTMLElement {
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/inert
-    inert: boolean;
+    inert: boolean
 
     // Let's be future proof:
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/focus
@@ -84,7 +91,7 @@ declare namespace browser.tabs {
 // https://github.com/DefinitelyTyped/DefinitelyTyped/blob/d1180e5218a7bf69e6f0da5ac2e2584bd57a1cdf/types/firefox-webext-browser/index.d.ts
 interface WebExtEventBase<
     TAddListener extends (...args: any[]) => any,
-    TCallback
+    TCallback,
 > {
     addListener: TAddListener
 
