@@ -415,31 +415,23 @@ config.getAsync("modeindicator").then(mode => {
     })
 })
 
-function protectSlash(e) {
-    if (!e.isTrusted) return
-    config.get("blacklistkeys").map(protkey => {
-        if (protkey.indexOf(e.key) !== -1 && contentState.mode === "normal") {
-            e.cancelBubble = true
-            e.stopImmediatePropagation()
-        }
-    })
-}
-
-// Some sites like to prevent firefox's `/` from working so we need to protect
-// ourselves against that
-// This was originally a github-specific fix
+let leaveGithubAlone = false // don't wait for the config before adding the listener
 config.getAsync("leavegithubalone").then(v => {
-    if (v === "true") return
-    try {
-        // On quick loading pages, the document is already loaded
-        document.body.addEventListener("keydown", protectSlash)
-    } catch (e) {
-        // But on slower pages we wait for the document to load
-        window.addEventListener("DOMContentLoaded", () => {
-            document.body.addEventListener("keydown", protectSlash)
-        })
+    leaveGithubAlone = v === "true"
+});
+// attach to window instead of document as it's available earlier
+// capture: true prevents bubbling before we have had a chance to cancel it
+window.addEventListener("keydown", protectSlash, {capture: true})
+
+function protectSlash(e) {
+    if (!e.isTrusted || leaveGithubAlone ) return
+    const blacklistKeys = config.get("blacklistkeys") || [];
+    if (blacklistKeys.includes(e.key) && contentState.mode === "normal") {
+        e.cancelBubble = true
+        e.stopImmediatePropagation()
+        e.stopPropagation()
     }
-})
+}
 
 // I still don't get lib/messaging.ts
 const phoneHome = () => browser.runtime.sendMessage("dom_loaded_background")
