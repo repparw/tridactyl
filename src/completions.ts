@@ -11,8 +11,6 @@ Concrete completion classes have been moved to src/completions/.
 */
 
 import Fuse from "fuse.js"
-import { enumerate } from "@src/lib/itertools"
-import { toNumber } from "@src/lib/convert"
 import * as aliases from "@src/lib/aliases"
 import { backoff } from "@src/lib/patience"
 import * as config from "@src/lib/config"
@@ -154,16 +152,6 @@ export interface ScoredOption {
 export abstract class CompletionSourceFuse extends CompletionSource {
     public node
 
-    // invalidate cache on option change
-    private _options: CompletionOptionFuse[]
-    public get options(): CompletionOptionFuse[] {
-        return this._options
-    }
-    public set options(val: CompletionOptionFuse[]) {
-        this._options = val
-        this.fuse = undefined
-    }
-
     fuseOptions = {
         keys: ["fuseKeys"],
         shouldSort: true,
@@ -183,6 +171,16 @@ export abstract class CompletionSourceFuse extends CompletionSource {
     protected sortScoredOptions = false
 
     protected optionContainer = html`<table class="optionContainer"></table>`
+
+    // invalidate cache on option change
+    private _options: CompletionOptionFuse[]
+    public get options(): CompletionOptionFuse[] {
+        return this._options
+    }
+    public set options(val: CompletionOptionFuse[]) {
+        this._options = val
+        this.fuse = undefined
+    }
 
     constructor(
         prefixes,
@@ -266,9 +264,9 @@ export abstract class CompletionSourceFuse extends CompletionSource {
         if (this.fuse === undefined) {
             this.fuse = new Fuse(this.options, this.fuseOptions)
         }
-        
+
         return this.fuse.search(query).map(result => ({
-            option: result.item, 
+            option: result.item,
             score: result.score,
         }))
     }
