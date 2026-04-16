@@ -304,14 +304,8 @@ export abstract class CompletionSourceFuse extends CompletionSource {
 
     /** Call to replace the current display */
     updateDisplay() {
-        const fragment = document.createDocumentFragment()
-        for (const option of this.options) {
-            if (option.state !== "hidden") {
-                fragment.appendChild(option.html)
-            }
-        }
-        this.optionContainer.innerHTML = ""
-        this.optionContainer.appendChild(fragment)
+        const visibleOptions = this.options.filter(o => o.state !== "hidden").map(o => o.html)
+        this.optionContainer.replaceChildren(...visibleOptions)
         this.next(0)
     }
 

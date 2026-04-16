@@ -52,6 +52,9 @@ interface HTMLElement {
     // Let's be future proof:
     // https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/focus
     focus(options?: any): void
+
+    // https://developer.mozilla.org/en-US/docs/Web/API/Element/replaceChildren
+    replaceChildren(...nodes: Node[]): void
 }
 
 /* eslint-disable @typescript-eslint/ban-types */
