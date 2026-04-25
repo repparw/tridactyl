@@ -6257,7 +6257,7 @@ export async function keyfeed(...args: string[]) {
     const keyseq = mapstrToKeyseq(mapstr)
 
     const spoofKey = (k: MinimalKey) => {
-        const event = new KeyboardEvent(eventType, { 
+        const event = new KeyboardEvent(eventType, {
             ...k,
             bubbles: true,
             cancelable: true,
