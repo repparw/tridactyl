@@ -6237,9 +6237,9 @@ export async function updatecheck(source: "manual" | "auto_polite" | "auto_impol
  *
  * 1. Go to `about:keyboard` and clear or rebind Ctrl+n from "New Window"
  * 2. `:bind <C-n> keyfeed --page <ArrowDown>`
- * 3. `:bind <C-n> keyfeed --mode=insert --page <ArrowDown>`
+ * 3. `:bind <C-n> --mode=insert keyfeed --page <ArrowDown>`
  * 4. `:bind <C-p> keyfeed --page <ArrowUp>`
- * 5. `:bind <C-p> keyfeed --mode=insert --page <ArrowUp>`
+ * 5. `:bind <C-p> --mode=insert keyfeed --page <ArrowUp>`
  *
  * NB:
  *
